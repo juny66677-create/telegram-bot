@@ -1,134 +1,134 @@
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 from datetime import datetime
+import pytz
 
-BOT_TOKEN = "7684673083:AAG_hu6hC1Em6osAEg5FjlEmfUdtalhNJvA"
+BOT_TOKEN = "8584678889:AAEWEULd7PAdXsKtyvs3nio2LWQdkeiz05M"
+
+# Cambodia timezone
+KH_TZ = pytz.timezone("Asia/Phnom_Penh")
 
 user_status = {}
 
+
 # ---------------------------------------------------------
-# CHECK-IN
+# KEYBOARD BUTTONS
 # ---------------------------------------------------------
-async def checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def get_keyboard():
+    keyboard = [
+        ["Start Work", "Off Work"],
+        ["WC", "Eat", "Smoke"],
+        ["Back"]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+# ---------------------------------------------------------
+# START WORK
+# ---------------------------------------------------------
+async def startwork(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     full_name = update.effective_user.full_name
 
-    if user_id in user_status and user_status[user_id].get("checkin_time"):
-        start = user_status[user_id]["checkin_time"].strftime("%Y-%m-%d %H:%M:%S")
+    if user_id in user_status and user_status[user_id].get("startwork_time"):
+        start = user_status[user_id]["startwork_time"].strftime("%Y-%m-%d %H:%M:%S")
         await update.message.reply_text(
-            f"❌ You already checked in at **{start}**.\nPlease /checkout first.",
+            f"❌ You already checked in at **{start}**.\nPlease offwork first.",
             parse_mode="Markdown"
         )
         return
 
-    now = datetime.now()
+    now = datetime.now(KH_TZ)
     user_status[user_id] = {
-        "checkin_time": now,
+        "startwork_time": now,
         "wc_start": None,
         "eat_start": None,
         "smoke_start": None
     }
 
     await update.message.reply_text(
-        f"✔️ Check-in successful!\n👤 {full_name}\n🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}"
+        f"✔️ Start Work Successful!\n👤 {full_name}\n🕒 {now.strftime('%Y-%m-%d %H:%M:%S')}",
+        reply_markup=get_keyboard()
     )
 
 
 # ---------------------------------------------------------
-# CHECK-OUT
+# OFF WORK
 # ---------------------------------------------------------
-async def checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def offwork(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     full_name = update.effective_user.full_name
 
-    if user_id not in user_status or user_status[user_id]["checkin_time"] is None:
+    if user_id not in user_status or user_status[user_id]["startwork_time"] is None:
         await update.message.reply_text("❌ You have not checked in.")
         return
 
-    checkin_time = user_status[user_id]["checkin_time"]
-    checkout_time = datetime.now()
+    start_time = user_status[user_id]["startwork_time"]
+    end_time = datetime.now(KH_TZ)
 
-    duration = checkout_time - checkin_time
+    duration = end_time - start_time
     hours = duration.seconds // 3600
     minutes = (duration.seconds % 3600) // 60
 
-    # Reset
     user_status[user_id] = {
-        "checkin_time": None,
+        "startwork_time": None,
         "wc_start": None,
         "eat_start": None,
         "smoke_start": None
     }
 
     await update.message.reply_markdown(
-        f"✔️ **Check-out complete!**\n\n"
+        f"✔️ **Work Finished!**\n\n"
         f"👤 *{full_name}*\n"
-        f"🟢 Check-in: {checkin_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-        f"🔴 Check-out: {checkout_time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-        f"⏳ **Total time:** {hours}h {minutes}m"
+        f"🟢 Start: {start_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"🔴 End: {end_time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        f"⏳ **Total:** {hours}h {minutes}m"
     )
 
 
 # ---------------------------------------------------------
-# WC START
+# WC
 # ---------------------------------------------------------
 async def wc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    full_name = update.effective_user.full_name
-
-    if user_id not in user_status or user_status[user_id]["checkin_time"] is None:
-        await update.message.reply_text("❌ You must /checkin before using WC.")
+    if user_id not in user_status or user_status[user_id]["startwork_time"] is None:
+        await update.message.reply_text("❌ You must Start Work first.")
         return
 
-    if user_status[user_id].get("eat_start"):
-        await update.message.reply_text("❌ You are currently eating. Use /back first.")
+    if user_status[user_id]["eat_start"] or user_status[user_id]["smoke_start"]:
+        await update.message.reply_text("❌ You must return Back first.")
         return
 
-    if user_status[user_id].get("smoke_start"):
-        await update.message.reply_text("❌ You are smoking. Use /back first.")
+    if user_status[user_id]["wc_start"]:
+        await update.message.reply_text("❌ Already in WC. Press Back.")
         return
 
-    if user_status[user_id].get("wc_start"):
-        await update.message.reply_text("❌ You are already in WC. Use /back to end it.")
-        return
-
-    now = datetime.now()
+    now = datetime.now(KH_TZ)
     user_status[user_id]["wc_start"] = now
 
-    await update.message.reply_text(
-        f"🚾\n👤 {full_name}\n WC started at {now.strftime('%Y-%m-%d %H:%M:%S')}"
-    )
+    await update.message.reply_text(f"🚾 WC started at {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 # ---------------------------------------------------------
-# EAT START
+# EATING
 # ---------------------------------------------------------
 async def eat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    full_name = update.effective_user.full_name
-
-    if user_id not in user_status or user_status[user_id]["checkin_time"] is None:
-        await update.message.reply_text("❌ You must /checkin before eating.")
+    if user_id not in user_status or user_status[user_id]["startwork_time"] is None:
+        await update.message.reply_text("❌ You must Start Work first.")
         return
 
-    if user_status[user_id].get("wc_start"):
-        await update.message.reply_text("❌ You are currently in WC. Use /back first.")
+    if user_status[user_id]["wc_start"] or user_status[user_id]["smoke_start"]:
+        await update.message.reply_text("❌ You must return Back first.")
         return
 
-    if user_status[user_id].get("smoke_start"):
-        await update.message.reply_text("❌ You are smoking. Use /back first.")
+    if user_status[user_id]["eat_start"]:
+        await update.message.reply_text("❌ You are already eating.")
         return
 
-    if user_status[user_id].get("eat_start"):
-        await update.message.reply_text("❌ You are already eating. Use /back to end it.")
-        return
-
-    now = datetime.now()
+    now = datetime.now(KH_TZ)
     user_status[user_id]["eat_start"] = now
-
-    await update.message.reply_text(
-        f"🍽\n👤 {full_name}\n Eating started at {now.strftime('%Y-%m-%d %H:%M:%S')}"
-    )
+    await update.message.reply_text(f"🍽 Eating started at {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 # ---------------------------------------------------------
@@ -136,82 +136,87 @@ async def eat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------------------------------------------------
 async def smoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    full_name = update.effective_user.full_name
-
-    if user_id not in user_status or user_status[user_id]["checkin_time"] is None:
-        await update.message.reply_text("❌ You must /checkin before smoking.")
+    if user_id not in user_status or user_status[user_id]["startwork_time"] is None:
+        await update.message.reply_text("❌ You must Start Work first.")
         return
 
-    if user_status[user_id].get("wc_start"):
-        await update.message.reply_text("❌ You are currently in WC. Please /back first.")
+    if user_status[user_id]["wc_start"] or user_status[user_id]["eat_start"]:
+        await update.message.reply_text("❌ You must return Back first.")
         return
 
-    if user_status[user_id].get("eat_start"):
-        await update.message.reply_text("❌ You are currently eating. Please /back first.")
+    if user_status[user_id]["smoke_start"]:
+        await update.message.reply_text("❌ Already smoking.")
         return
 
-    if user_status[user_id].get("smoke_start"):
-        await update.message.reply_text("❌ You are already smoking. Use /back to end it.")
-        return
-
-    now = datetime.now()
+    now = datetime.now(KH_TZ)
     user_status[user_id]["smoke_start"] = now
-
-    await update.message.reply_text(
-        f"🚬\n👤 {full_name}\n Smoking started at {now.strftime('%Y-%m-%d %H:%M:%S')}."
-    )
+    await update.message.reply_text(f"🚬 Smoking started at {now.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 # ---------------------------------------------------------
-# BACK (END ANY BREAK)
+# BACK (END BREAK)
 # ---------------------------------------------------------
 async def back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    full_name = update.effective_user.full_name
-    now = datetime.now()
+    now = datetime.now(KH_TZ)
 
     # WC
-    if user_status[user_id].get("wc_start"):
+    if user_status[user_id]["wc_start"]:
         start = user_status[user_id]["wc_start"]
-        diff = now - start
-        minutes = diff.seconds // 60
-        warning = "⚠️ WC exceeded 15 minutes!" if minutes > 15 else "👍 Within 15 minutes."
-        await update.message.reply_text(f"🚾 WC ended. Duration: {minutes} min.\n{warning}")
+        mins = int((now - start).seconds / 60)
+        warn = "⚠️ Exceeded 15 minutes!" if mins > 15 else "👍 Within time."
         user_status[user_id]["wc_start"] = None
+        await update.message.reply_text(f"🚾 WC ended — {mins} min\n{warn}")
         return
 
     # Eating
-    if user_status[user_id].get("eat_start"):
+    if user_status[user_id]["eat_start"]:
         start = user_status[user_id]["eat_start"]
-        diff = now - start
-        minutes = diff.seconds // 60
-        warning = "⚠️ Eating exceeded 30 minutes!" if minutes > 30 else "👍 Within 30 minutes."
-        await update.message.reply_text(f"🍽 Eating ended. Duration: {minutes} min.\n{warning}")
+        mins = int((now - start).seconds / 60)
+        warn = "⚠️ Exceeded 30 minutes!" if mins > 30 else "👍 Within time."
         user_status[user_id]["eat_start"] = None
+        await update.message.reply_text(f"🍽 Eating ended — {mins} min\n{warn}")
         return
 
     # Smoking
-    if user_status[user_id].get("smoke_start"):
+    if user_status[user_id]["smoke_start"]:
         start = user_status[user_id]["smoke_start"]
-        diff = now - start
-        minutes = diff.seconds // 60
-        warning = "⚠️ Smoking exceeded 15 minutes!" if minutes > 15 else "👍 Within 15 minutes."
-        await update.message.reply_text(f"🚬 Smoking ended. Duration: {minutes} min.\n{warning}")
+        mins = int((now - start).seconds / 60)
+        warn = "⚠️ Exceeded 15 minutes!" if mins > 15 else "👍 Within time."
         user_status[user_id]["smoke_start"] = None
+        await update.message.reply_text(f"🚬 Smoking ended — {mins} min\n{warn}")
         return
 
-    await update.message.reply_text("❌ You are not in WC, Eating, or Smoking.")
+    await update.message.reply_text("❌ You are not in break.")
+
+
+# ---------------------------------------------------------
+# BUTTON HANDLER (TEXT -> COMMAND)
+# ---------------------------------------------------------
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower()
+
+    if text == "start work":      return await startwork(update, context)
+    if text == "off work":        return await offwork(update, context)
+    if text == "wc":              return await wc(update, context)
+    if text == "eat":             return await eat(update, context)
+    if text == "smoke":           return await smoke(update, context)
+    if text == "back":            return await back(update, context)
 
 
 # ---------------------------------------------------------
 # BOT SETUP
 # ---------------------------------------------------------
 app = ApplicationBuilder().token(BOT_TOKEN).build()
-app.add_handler(CommandHandler("checkin", checkin))
-app.add_handler(CommandHandler("checkout", checkout))
+
+app.add_handler(CommandHandler("startwork", startwork))
+app.add_handler(CommandHandler("offwork", offwork))
 app.add_handler(CommandHandler("wc", wc))
 app.add_handler(CommandHandler("eat", eat))
 app.add_handler(CommandHandler("smoke", smoke))
 app.add_handler(CommandHandler("back", back))
+
+# Buttons
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
 
 app.run_polling()
